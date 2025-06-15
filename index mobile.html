@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Jeu du balcon qui pisse (MOBILE)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body { background: #222; color: #fff; text-align: center; margin: 0; overflow: hidden;}
+        canvas { background: #8ecae6; display: block; margin: 0 auto; touch-action: none; }
+        #score, #niveau { font-size: 1.5em; }
+        #controls {
+            position: fixed;
+            bottom: 30px;
+            left: 0; right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 25px;
+            z-index: 10;
+            user-select: none;
+        }
+        .btn {
+            background: #495867;
+            border: none;
+            color: #fff;
+            font-size: 2.2em;
+            padding: 12px 24px;
+            border-radius: 22px;
+            box-shadow: 0 2px 6px #0006;
+            cursor: pointer;
+            transition: background 0.2s;
+            touch-action: manipulation;
+        }
+        .btn:active {
+            background: #ffb703;
+            color: #222;
+        }
+        #fullscreenBtn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #219ebc;
+            color: #fff;
+            font-size: 1.4em;
+            padding: 7px 16px;
+            border-radius: 8px;
+            z-index: 11;
+            cursor: pointer;
+            border: none;
+        }
+        @media (max-width: 700px) {
+            #game { width: 100vw !important; height: 60vw !important; max-height: 70vh; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Jeu du balcon qui pisse (Mobile)</h1>
+    <div id="score">Score : 0</div>
+    <div id="niveau">Niveau : 1 / 10</div>
+    <button id="fullscreenBtn" onclick="enterFullscreen()">🖵 Plein écran</button>
+    <canvas id="game" width="600" height="400"></canvas>
+    <div id="controls">
+        <button class="btn" id="leftBtn">⬅️</button>
+        <button class="btn" id="shootBtn">💧</button>
+        <button class="btn" id="rightBtn">➡️</button>
+    </div>
+    <script>
+        // Plein écran auto au 1er tap
+        function enterFullscreen() {
+            const el = document.documentElement;
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            else if (el.msRequestFullscreen) el.msRequestFullscreen();
+        }
+        window.addEventListener('touchstart', function once() {
+            enterFullscreen();
+            window.removeEventListener('touchstart', once, false);
+        }, false);
+
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const NB_LEVELS = 10;
+        let niveau = 1;
+        let score = 0;
+        let people = [];
+        let shots = [];
+        let player = { x: 300, y: 60, width: 30, height: 55 };
+        let victory = false;
+        let nextLevelPending = false;
+
+        function resetLevel() {
+            people = [];
+            let nbPeople = niveau + 2;
+            let width = 30;
+            let minX = 0;
+            let maxX = canvas.width - width;
+            let spacing = nbPeople > 1 ? (maxX - minX) / (nbPeople - 1) : 0;
+            for (let i = 0; i < nbPeople; i++) {
+                people.push({
+                    x: minX + i * spacing,
+                    y: 350,
+                    width: width,
+                    height: 55,
+                    speed: 0.5 + niveau * 0.3 * (Math.random() > 0.5 ? 1 : -1),
+                    direction: Math.random() > 0.5 ? 1 : -1,
+                    hit: false
+                });
+            }
+            shots = [];
+            player.x = 300;
+        }
+
+        function drawStickman(ctx, x, y, color = "#111") {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x + 15, y + 10, 8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 18);
+            ctx.lineTo(x + 15, y + 38);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 24);
+            ctx.lineTo(x, y + 32);
+            ctx.moveTo(x + 15, y + 24);
+            ctx.lineTo(x + 30, y + 32);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 38);
+            ctx.lineTo(x, y + 55);
+            ctx.moveTo(x + 15, y + 38);
+            ctx.lineTo(x + 30, y + 55);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawPlayerStickman(ctx, x, y) {
+            ctx.save();
+            ctx.strokeStyle = "#fed766";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(x + 15, y + 10, 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 20);
+            ctx.lineTo(x + 15, y + 40);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 27);
+            ctx.lineTo(x + 10, y + 36);
+            ctx.moveTo(x + 15, y + 27);
+            ctx.lineTo(x + 20, y + 36);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + 15, y + 40);
+            ctx.lineTo(x + 5, y + 55);
+            ctx.moveTo(x + 15, y + 40);
+            ctx.lineTo(x + 25, y + 55);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawPlayer() {
+            drawPlayerStickman(ctx, player.x, player.y);
+        }
+
+        function drawPeople() {
+            people.forEach(p => {
+                drawStickman(ctx, p.x, p.y, p.hit ? "#ff595e" : "#023047");
+            });
+        }
+
+        function drawShots() {
+            ctx.strokeStyle = "#ffee00";
+            ctx.lineWidth = 4;
+            shots.forEach(s => {
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y);
+                ctx.lineTo(s.x, s.y + 15);
+                ctx.stroke();
+            });
+        }
+
+        function updatePeople() {
+            people.forEach(p => {
+                if (!p.hit) {
+                    p.x += p.speed * p.direction;
+                    if (p.x <= 0) {
+                        p.x = 1;
+                        p.direction = 1;
+                    }
+                    if (p.x >= canvas.width - p.width) {
+                        p.x = canvas.width - p.width - 1;
+                        p.direction = -1;
+                    }
+                }
+            });
+        }
+
+        function updateShots() {
+            shots.forEach(s => s.y += 7);
+            shots.forEach(s => {
+                people.forEach(p => {
+                    if (!p.hit &&
+                        s.x > p.x && s.x < p.x + p.width &&
+                        s.y + 15 > p.y && s.y < p.y + p.height
+                    ) {
+                        p.hit = true;
+                        score++;
+                    }
+                });
+            });
+            shots = shots.filter(s => s.y < canvas.height);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // TOIT
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(0, 90);
+            ctx.lineTo(canvas.width / 2, 30);
+            ctx.lineTo(canvas.width, 90);
+            ctx.closePath();
+            ctx.fillStyle = "#aaa";
+            ctx.fill();
+            ctx.strokeStyle = "#666";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.restore();
+
+            // Immeuble
+            ctx.fillStyle = "#495867";
+            ctx.fillRect(0, 90, canvas.width, 280);
+
+            // BALCON ET GARDE-CORPS
+            ctx.fillStyle = "#577590";
+            ctx.fillRect(0, 90, canvas.width, 20);
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 3;
+            for (let i = 0; i <= canvas.width; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 90);
+                ctx.lineTo(i, 110);
+                ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.moveTo(0, 105);
+            ctx.lineTo(canvas.width, 105);
+            ctx.stroke();
+
+            drawPlayer();
+            drawPeople();
+            drawShots();
+        }
+
+        function loop() {
+            if (victory) return;
+            updatePeople();
+            updateShots();
+            draw();
+            document.getElementById('score').innerText = "Score : " + score;
+            document.getElementById('niveau').innerText = "Niveau : " + niveau + " / " + NB_LEVELS;
+            if (!nextLevelPending && people.every(p => p.hit)) {
+                nextLevelPending = true;
+                setTimeout(() => {
+                    if (niveau < NB_LEVELS) {
+                        niveau++;
+                        resetLevel();
+                        nextLevelPending = false;
+                    } else {
+                        victory = true;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = "#fff";
+                        ctx.font = "28px Arial";
+                        ctx.fillText("Félicitations, tu as pissé sur tout le monde !", 30, 200);
+                    }
+                }, 1000);
+            }
+            if (!victory) requestAnimationFrame(loop);
+        }
+
+        // --- Contrôles tactiles uniquement ---
+        let moveInterval = null;
+
+        function startMove(direction) {
+            if (moveInterval) clearInterval(moveInterval);
+            moveInterval = setInterval(() => {
+                if (victory) return;
+                if (direction === 'left') player.x -= 12;
+                if (direction === 'right') player.x += 12;
+            }, 40);
+        }
+        function stopMove() {
+            if (moveInterval) clearInterval(moveInterval);
+            moveInterval = null;
+        }
+
+        document.getElementById('leftBtn').addEventListener('touchstart', e => { e.preventDefault(); startMove('left'); });
+        document.getElementById('leftBtn').addEventListener('touchend', e => { e.preventDefault(); stopMove(); });
+        document.getElementById('rightBtn').addEventListener('touchstart', e => { e.preventDefault(); startMove('right'); });
+        document.getElementById('rightBtn').addEventListener('touchend', e => { e.preventDefault(); stopMove(); });
+        document.getElementById('shootBtn').addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (victory) return;
+            shots.push({ x: player.x + 15, y: player.y + 36 });
+        });
+
+        // Empêche scroll sur mobile quand on appuie sur les boutons
+        document.getElementById('controls').addEventListener('touchmove', e => e.preventDefault());
+
+        resetLevel();
+        loop();
+    </script>
+</body>
+</html>
